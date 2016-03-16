@@ -20,6 +20,7 @@ limitations under the License.
 # Originally written by Jeff Sharkey, http://jsharkey.org/
 # Piping detection and popen() added by other Android team members
 # Package filtering and output improvements by Jake Wharton, http://jakewharton.com
+# Support for threadtime added by Trevor Wiley
 
 import argparse
 import sys
@@ -27,7 +28,7 @@ import re
 import subprocess
 from subprocess import PIPE
 
-__version__ = '2.0.0'
+__version__ = '2.0.1'
 
 LOG_LEVELS = 'VDIWEF'
 LOG_LEVELS_MAP = dict([(LOG_LEVELS[i], i) for i in range(len(LOG_LEVELS))])
@@ -46,6 +47,8 @@ parser.add_argument('-t', '--tag', dest='tag', action='append', help='Filter out
 parser.add_argument('-i', '--ignore-tag', dest='ignored_tag', action='append', help='Filter output by ignoring specified tag(s)')
 parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__, help='Print the version number and exit')
 parser.add_argument('-a', '--all', dest='all', action='store_true', default=False, help='Print all log messages')
+parser.add_argument('--threadtime', dest='threadtime', action='store_true', default=False, help='Format log messages as threadtime')
+
 
 args = parser.parse_args()
 min_level = LOG_LEVELS_MAP[args.min_level.upper()]
@@ -172,12 +175,16 @@ PID_KILL  = re.compile(r'^Killing (\d+):([a-zA-Z0-9._:]+)/[^:]+: (.*)$')
 PID_LEAVE = re.compile(r'^No longer want ([a-zA-Z0-9._:]+) \(pid (\d+)\): .*$')
 PID_DEATH = re.compile(r'^Process ([a-zA-Z0-9._:]+) \(pid (\d+)\) has died.?$')
 LOG_LINE  = re.compile(r'^([A-Z])/(.+?)\( *(\d+)\): (.*?)$')
+LOG_THREADTIME_LINE  = re.compile(r'^([01][1-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9]\.[0-9][0-9][0-9]) *([0-9]*) *([0-9]*) ([A-Z]) (.+?): (.*?)$')
 BUG_LINE  = re.compile(r'.*nativeGetEnabledTags.*')
 BACKTRACE_LINE = re.compile(r'^#(.*?)pc\s(.*?)$')
 
 adb_command = base_adb_command[:]
 adb_command.append('logcat')
-adb_command.extend(['-v', 'brief'])
+if args.threadtime:
+  adb_command.extend(['-v', 'threadtime'])
+else:
+  adb_command.extend(['-v', 'brief'])
 
 # Clear log before starting logcat
 if args.clear_logcat:
@@ -283,10 +290,18 @@ while adb.poll() is None:
     continue
 
   log_line = LOG_LINE.match(line)
+  log_threadtime_line = None
   if log_line is None:
-    continue
+    log_threadtime_line = LOG_THREADTIME_LINE.match(line)
+    if log_threadtime_line is None:
+      continue
+    else:
+      timestamp, owner, tid, level, tag, message = log_threadtime_line.groups()
+  else:
+    timestamp = None
+    tid = None
+    level, tag, owner, message = log_line.groups()
 
-  level, tag, owner, message = log_line.groups()
   tag = tag.strip()
   start = parse_start_proc(line)
   if start:
@@ -350,6 +365,12 @@ while adb.poll() is None:
   else:
     linebuf += ' ' + level + ' '
   linebuf += ' '
+
+  if tid is not None:
+    linebuf += '({:>6}) '.format(tid)
+
+  if timestamp is not None:
+    linebuf += '|' + timestamp + '| '
 
   # format tag message using rules
   for matcher in RULES:
