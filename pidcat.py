@@ -49,7 +49,6 @@ parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + _
 parser.add_argument('-a', '--all', dest='all', action='store_true', default=False, help='Print all log messages')
 parser.add_argument('--threadtime', dest='threadtime', action='store_true', default=False, help='Format log messages as threadtime')
 
-
 args = parser.parse_args()
 min_level = LOG_LEVELS_MAP[args.min_level.upper()]
 
@@ -277,6 +276,8 @@ while True:
       seen_pids = True
       pids.add(pid)
 
+saw_log_threadtime_line = False
+
 while adb.poll() is None:
   try:
     line = adb.stdout.readline().decode('utf-8', 'replace').strip()
@@ -289,18 +290,24 @@ while adb.poll() is None:
   if bug_line is not None:
     continue
 
-  log_line = LOG_LINE.match(line)
+  log_line = None
+  if not saw_log_threadtime_line:
+    log_line = LOG_LINE.match(line)
+
   log_threadtime_line = None
-  if log_line is None:
+  if saw_log_threadtime_line or log_line is None:
     log_threadtime_line = LOG_THREADTIME_LINE.match(line)
-    if log_threadtime_line is None:
-      continue
-    else:
-      timestamp, owner, tid, level, tag, message = log_threadtime_line.groups()
-  else:
+    if log_threadtime_line is not None:
+      saw_log_threadtime_line = True
+
+  if log_line is not None:
     timestamp = None
     tid = None
     level, tag, owner, message = log_line.groups()
+  elif log_threadtime_line is not None:
+    timestamp, owner, tid, level, tag, message = log_threadtime_line.groups()
+  else:
+    continue
 
   tag = tag.strip()
   start = parse_start_proc(line)
