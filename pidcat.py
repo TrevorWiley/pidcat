@@ -44,6 +44,7 @@ parser.add_argument('-d', '--device', dest='use_device', action='store_true', he
 parser.add_argument('-e', '--emulator', dest='use_emulator', action='store_true', help='Use first emulator for log input (adb -e option)')
 parser.add_argument('-c', '--clear', dest='clear_logcat', action='store_true', help='Clear the entire log before running')
 parser.add_argument('-t', '--tag', dest='tag', action='append', help='Filter output by specified tag(s)')
+parser.add_argument('-p', '--pid', dest='pid', action='append', help='Filter output by specified pid(s)')
 parser.add_argument('-i', '--ignore-tag', dest='ignored_tag', action='append', help='Filter output by ignoring specified tag(s)')
 parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__, help='Print the version number and exit')
 parser.add_argument('-a', '--all', dest='all', action='store_true', default=False, help='Print all log messages')
@@ -68,7 +69,7 @@ if args.current_app:
   running_package_name = re.search(".*TaskRecord.*A[= ]([^ ^}]*)", system_dump).group(1)
   package.append(running_package_name)
 
-if len(package) == 0:
+if len(package) == 0 and not args.pid:
   args.all = True
 
 # Store the names of packages for which to match all processes.
@@ -345,7 +346,8 @@ while adb.poll() is None:
       owner = app_pid
 
   if not args.all and owner not in pids:
-    continue
+    if args.pid is None or owner not in args.pid:
+      continue
   if level in LOG_LEVELS_MAP and LOG_LEVELS_MAP[level] < min_level:
     continue
   if args.ignored_tag and tag_in_tags_regex(tag, args.ignored_tag):
