@@ -80,6 +80,7 @@ named_processes = filter(lambda package: package.find(":") != -1, package)
 named_processes = map(lambda package: package if package.find(":") != len(package) - 1 else package[:-1], named_processes)
 
 header_size = args.tag_width + 1 + 3 + 1 # space, level, space
+header_size_threadtime = header_size + 8 + 1 + 20 + 1 # space, (   pid), space, |MM-DD hh:mm:ss.SSS|, space
 
 width = -1
 try:
@@ -183,6 +184,7 @@ adb_command = base_adb_command[:]
 adb_command.append('logcat')
 if args.threadtime:
   adb_command.extend(['-v', 'threadtime'])
+  header_size = header_size_threadtime
 else:
   adb_command.extend(['-v', 'brief'])
 
@@ -277,8 +279,6 @@ while True:
       seen_pids = True
       pids.add(pid)
 
-saw_log_threadtime_line = False
-
 while adb.poll() is None:
   try:
     line = adb.stdout.readline().decode('utf-8', 'replace').strip()
@@ -292,14 +292,15 @@ while adb.poll() is None:
     continue
 
   log_line = None
-  if not saw_log_threadtime_line:
+  if not args.threadtime:
     log_line = LOG_LINE.match(line)
 
   log_threadtime_line = None
-  if saw_log_threadtime_line or log_line is None:
+  if args.threadtime or log_line is None:
     log_threadtime_line = LOG_THREADTIME_LINE.match(line)
     if log_threadtime_line is not None:
-      saw_log_threadtime_line = True
+      args.threadtime = True
+      header_size = header_size_threadtime
 
   if log_line is not None:
     timestamp = None
